@@ -2,8 +2,12 @@
 
 Reports the Part D metric suite:
 
-* **Overall**: WAPE, MAE, RMSE (plus bias and per-split row counts).
-* **Breakdowns**: by channel, category, and promo vs. non-promo.
+* **Overall**: WAPE, MAE, RMSE (plus bias and per-split row counts), reported
+  both on all rows and on in-stock rows only (``overall_ex_stockout``). On
+  stockout days ``units_sold`` is supply-capped, so a correct demand forecast
+  looks like an over-forecast; the in-stock view removes that penalty.
+* **Breakdowns**: by channel, category, promo vs. non-promo, and
+  in-stock vs. stockout (``by_stockout``) so censored days are visible.
 * **Business proxy**: overstock cost (over-forecast tied up as inventory at
   ``purchase_cost``) and stockout / lost-margin cost (under-forecast valued at
   unit margin ``list_price * margin_pct``).
@@ -79,6 +83,13 @@ def promo_breakdown(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def stockout_breakdown(df: pd.DataFrame) -> pd.DataFrame:
+    """WAPE/MAE/RMSE split by stockout flag (censored vs. observable demand)."""
+    out = breakdown(df, "stock_out_flag")
+    out["segment"] = out["stock_out_flag"].map({0: "in_stock", 1: "stockout"})
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # Business proxy
 # --------------------------------------------------------------------------- #
@@ -120,12 +131,17 @@ def build_eval_frame(meta: pd.DataFrame, y_pred: np.ndarray) -> pd.DataFrame:
 def evaluate_split(meta: pd.DataFrame, y_pred: np.ndarray, split_name: str) -> tuple[dict, pd.DataFrame]:
     """Full metric suite for one split. Returns ``(metrics_dict, eval_frame)``."""
     df = build_eval_frame(meta, y_pred)
+    in_stock = df[df["stock_out_flag"] == 0]
     results = {
         "split": split_name,
         "overall": compute_metrics(df["units_sold"].values, df["y_pred"].values),
+        "overall_ex_stockout": compute_metrics(
+            in_stock["units_sold"].values, in_stock["y_pred"].values
+        ),
         "by_channel": breakdown(df, "channel").to_dict(orient="records"),
         "by_category": breakdown(df, "category").to_dict(orient="records"),
         "by_promo": promo_breakdown(df).to_dict(orient="records"),
+        "by_stockout": stockout_breakdown(df).to_dict(orient="records"),
         "business_proxy": business_proxy(df),
     }
     return results, df

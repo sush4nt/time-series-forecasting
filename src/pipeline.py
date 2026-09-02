@@ -9,10 +9,10 @@ Artifacts (under ``artifacts/<model>_<timestamp>/``):
 
     config.yaml               exact config used
     run_meta.json             seed, versions, timings, best_iteration, row counts
-    metrics.json              overall + breakdowns + business proxy (val & test)
+    metrics.json              overall + breakdowns + business proxy (train, val & test)
     metrics_summary.txt       human-readable summary
     feature_importance.csv    ranked feature importances
-    breakdown_*_test.csv      per-channel / per-category / per-promo tables
+    breakdown_*_test.csv      per-channel / per-category / per-promo / per-stockout tables
     predictions_test.parquet  per-row test predictions (for failure-mode analysis)
     predictions_val.parquet   per-row val predictions
     model.{txt,json,cbm}      serialized model
@@ -79,19 +79,33 @@ def _fmt_overall(tag: str, m: dict) -> str:
     )
 
 
-def _write_summary(path: Path, model_name: str, val: dict, test: dict, best_iter) -> None:
+def _write_summary(path: Path, model_name: str, train: dict, val: dict, test: dict, best_iter) -> None:
     lines = [
         "=" * 70,
         f"Part B baseline — {model_name}",
         "=" * 70,
         f"best_iteration: {best_iter}",
         "",
-        "OVERALL",
+        "OVERALL (all rows)",
+        _fmt_overall("train", train["overall"]),
         _fmt_overall("val", val["overall"]),
         _fmt_overall("test", test["overall"]),
         "",
-        "TEST — by promo",
+        "OVERALL (in-stock rows only — excludes censored stockout days)",
+        _fmt_overall("train", train["overall_ex_stockout"]),
+        _fmt_overall("val", val["overall_ex_stockout"]),
+        _fmt_overall("test", test["overall_ex_stockout"]),
+        "",
+        "TEST — by stockout",
     ]
+    for r in test["by_stockout"]:
+        lines.append(
+            f"  {r['segment']:<10} n={r['n']:>8,}  "
+            f"WAPE={r['wape']:.4f}  MAE={r['mae']:.3f}  RMSE={r['rmse']:.3f}  "
+            f"bias={r['bias']:+.3f}"
+        )
+    lines.append("")
+    lines.append("TEST — by promo")
     for r in test["by_promo"]:
         lines.append(
             f"  {r['segment']:<10} n={r['n']:>8,}  "
@@ -139,7 +153,7 @@ def run(
 
     # 2. Features -----------------------------------------------------------
     t = time.time()
-    df, feature_cols = build_features(df, cfg.features, cfg.split)
+    df, feature_cols = build_features(df, cfg.features, cfg.split, cfg.seed)
     timings["features_s"] = round(time.time() - t, 2)
 
     # 3. Split --------------------------------------------------------------
@@ -155,8 +169,10 @@ def run(
 
     # 5. Evaluate -----------------------------------------------------------
     t = time.time()
+    train_pred = trained.predict(splits.train.X)
     val_pred = trained.predict(splits.val.X)
     test_pred = trained.predict(splits.test.X)
+    train_metrics, _ = evaluate_split(splits.train.meta, train_pred, "train")
     val_metrics, val_frame = evaluate_split(splits.val.meta, val_pred, "val")
     test_metrics, test_frame = evaluate_split(splits.test.meta, test_pred, "test")
     timings["evaluate_s"] = round(time.time() - t, 2)
@@ -175,6 +191,7 @@ def run(
         "params": params,
         "best_iteration": trained.best_iteration,
         "n_features": len(feature_cols),
+        "train": train_metrics,
         "val": val_metrics,
         "test": test_metrics,
     }
@@ -208,13 +225,14 @@ def run(
     pd.DataFrame(test_metrics["by_channel"]).to_csv(run_dir / "breakdown_channel_test.csv", index=False)
     pd.DataFrame(test_metrics["by_category"]).to_csv(run_dir / "breakdown_category_test.csv", index=False)
     pd.DataFrame(test_metrics["by_promo"]).to_csv(run_dir / "breakdown_promo_test.csv", index=False)
+    pd.DataFrame(test_metrics["by_stockout"]).to_csv(run_dir / "breakdown_stockout_test.csv", index=False)
 
     # Per-row predictions for downstream failure-mode analysis.
     test_frame.to_parquet(run_dir / "predictions_test.parquet", index=False)
     val_frame.to_parquet(run_dir / "predictions_val.parquet", index=False)
 
-    _write_summary(run_dir / "metrics_summary.txt", model_name, val_metrics, test_metrics,
-                   trained.best_iteration)
+    _write_summary(run_dir / "metrics_summary.txt", model_name, train_metrics, val_metrics,
+                   test_metrics, trained.best_iteration)
 
     # Serialize the model itself.
     trained.save(run_dir / "model")
