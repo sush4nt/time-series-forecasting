@@ -1,0 +1,67 @@
+# =============================================================================
+# Part B — Classical ML Baseline configuration
+# -----------------------------------------------------------------------------
+# Single source of truth for the whole pipeline. Every run snapshots this file
+# into its artifact folder so results are reproducible.
+# =============================================================================
+
+seed: 42
+
+data:
+  # Path is resolved relative to the project root (the folder holding this repo).
+  path: data/data.csv
+
+# Temporal split (chronological, no shuffling). Matches the EDA notebook.
+#   train : oldest history            (<= train_end, stockout rows dropped)
+#   val   : middle window             (train_end, val_end]  -> early stopping / tuning
+#   test  : most recent, report once  (val_end, test_end]
+split:
+  train_end: "2022-12-31"
+  val_end: "2023-09-30"
+  test_end: "2023-12-31"
+
+features:
+  horizon: 14          # fixed forecast horizon; drives all leakage-safe shifts
+  target_smoothing: 20 # shrinkage strength for smoothed target encoding
+  heavy_rain_quantile: 0.75
+
+# Model hyper-parameters. The active model is chosen at run time
+# (`--model lightgbm|xgboost|catboost`); only that block is used.
+model:
+  lightgbm:
+    objective: regression
+    metric: mae
+    n_estimators: 2000
+    learning_rate: 0.05
+    num_leaves: 63
+    max_depth: -1
+    subsample: 0.8
+    subsample_freq: 1
+    colsample_bytree: 0.8
+    min_child_samples: 50
+    reg_lambda: 1.0
+    early_stopping_rounds: 100
+
+  xgboost:
+    objective: "reg:squarederror"
+    eval_metric: mae
+    n_estimators: 2000
+    learning_rate: 0.05
+    max_depth: 8
+    subsample: 0.8
+    colsample_bytree: 0.8
+    min_child_weight: 5
+    reg_lambda: 1.0
+    early_stopping_rounds: 100
+
+  catboost:
+    loss_function: RMSE
+    eval_metric: MAE
+    iterations: 2000
+    learning_rate: 0.05
+    depth: 8
+    l2_leaf_reg: 3.0
+    early_stopping_rounds: 100
+
+output:
+  dir: artifacts   # per-run subfolders are created as <model>_<timestamp>
