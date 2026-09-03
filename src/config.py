@@ -35,6 +35,24 @@ class FeatureConfig:
 
 
 @dataclass
+class DLConfig:
+    """Hyper-parameters for the GRU encoder-decoder (Part C)."""
+
+    encoder_len: int = 28
+    horizon: int = 14
+    train_stride: int = 3
+    hidden_size: int = 64
+    num_layers: int = 2
+    dropout: float = 0.1
+    embedding_dim: int = 16
+    batch_size: int = 512
+    lr: float = 1e-3
+    max_epochs: int = 40
+    patience: int = 6
+    grad_clip: float = 1.0
+
+
+@dataclass
 class Config:
     """Fully resolved pipeline configuration for a single run."""
 
@@ -44,6 +62,7 @@ class Config:
     features: FeatureConfig
     model_params: dict[str, dict[str, Any]]
     output_dir: Path
+    dl: DLConfig = field(default_factory=DLConfig)
     raw: dict[str, Any] = field(default_factory=dict)
 
     def params_for(self, model_name: str) -> dict[str, Any]:
@@ -75,5 +94,6 @@ def load_config(config_path: str | Path) -> Config:
         features=FeatureConfig(**raw.get("features", {})),
         model_params=raw["model"],
         output_dir=_resolve(raw.get("output", {}).get("dir", "artifacts")),
+        dl=DLConfig(**raw.get("dl", {})),
         raw=raw,
     )

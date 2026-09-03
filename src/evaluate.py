@@ -90,6 +90,12 @@ def stockout_breakdown(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def horizon_breakdown(df: pd.DataFrame) -> pd.DataFrame:
+    """WAPE/MAE/RMSE per forecast lead time (1..H). Needs a ``horizon`` column."""
+    out = breakdown(df, "horizon")
+    return out.sort_values("horizon").reset_index(drop=True)
+
+
 # --------------------------------------------------------------------------- #
 # Business proxy
 # --------------------------------------------------------------------------- #
@@ -144,4 +150,7 @@ def evaluate_split(meta: pd.DataFrame, y_pred: np.ndarray, split_name: str) -> t
         "by_stockout": stockout_breakdown(df).to_dict(orient="records"),
         "business_proxy": business_proxy(df),
     }
+    # Per-lead-time view is only meaningful for multi-horizon (DL) predictions.
+    if "horizon" in df.columns:
+        results["by_horizon"] = horizon_breakdown(df).to_dict(orient="records")
     return results, df

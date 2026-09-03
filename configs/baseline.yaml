@@ -63,5 +63,20 @@ model:
     l2_leaf_reg: 3.0
     early_stopping_rounds: 100
 
+# Part C — GRU encoder-decoder. Read 28 past days -> predict next 14.
+dl:
+  encoder_len: 28
+  horizon: 14
+  train_stride: 3        # sample every 3rd origin in TRAIN (val/test tile by horizon)
+  hidden_size: 64
+  num_layers: 2
+  dropout: 0.1
+  embedding_dim: 16
+  batch_size: 512
+  lr: 0.001
+  max_epochs: 40
+  patience: 6
+  grad_clip: 1.0
+
 output:
   dir: artifacts   # per-run subfolders are created as <model>_<timestamp>
