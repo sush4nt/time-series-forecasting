@@ -17,7 +17,7 @@ the classical write-up in
 flowchart LR
     A[data.csv] --> B[dl_dataset.py<br/>window into 28+14 flashcards]
     B --> C[dl_model.py<br/>GRU encoder-decoder]
-    C --> D[dl_pipeline.py<br/>train + early-stop on val WAPE]
+    C --> D[backends/gru.py<br/>train + early-stop on val WAPE]
     D --> E[reshape to per-row<br/>units_sold]
     E --> F[evaluate.py<br/>same metrics as baseline]
 ```
@@ -345,7 +345,7 @@ with `expm1` before any metric so numbers are real units.
 
 ---
 
-## 3. Training recipe ([src/dl_pipeline.py](src/dl_pipeline.py))
+## 3. Training recipe ([src/backends/gru.py](src/backends/gru.py))
 
 | Ingredient | Choice | Why |
 |---|---|---|
@@ -392,23 +392,23 @@ guarantees the checkpoint we ship is the one that wins on the number we report.
 ## 5. How the scripts fit together
 
 ```
-train_dl.py  ── CLI (--max-epochs, --limit-series for smoke tests)
+train.py --model gru  ── unified CLI (--max-epochs, --limit-series for smoke tests)
      │
      ▼
-src/dl_pipeline.run()
-     ├─ data.load_data            (shared with classical)
-     ├─ dl_dataset.build_dl_data  → DLData (series arrays, samples, scalers, dims)
-     ├─ WindowDataset ×3          (train/val/test) → DataLoader
-     ├─ dl_model.GRUEncoderDecoder
-     ├─ train loop + early stop (on val WAPE)
-     ├─ _predict → _to_units → _evaluate  (train/val/test)
-     └─ write artifacts  ── SAME folder shape as the tree baseline
+src/runner.run(model="gru")
+     ├─ data.load_data                (shared with classical)
+     ├─ backends/gru.GRUBackend.prepare  → windows + Preprocessor (scalers, vocabs, dims)
+     ├─ backends/gru.GRUBackend.fit      → GRU train loop + early stop (on val WAPE)
+     ├─ backends/gru.GRUBackend.predict  → per-split (meta, units) via reshape+inverse
+     ├─ evaluate.evaluate_split          (shared, train/val/test)
+     └─ artifacts.*                      ── SAME folder shape as the tree baseline
 ```
 
 **Artifacts** (identical shape to Part B, so the exploration notebook & comparison tooling
 just work): `metrics.json` (train/val/test), `metrics_summary.txt`, `run_meta.json`,
 `predictions_{test,val}.parquet`, `breakdown_{channel,category,promo,stockout,horizon}_test.csv`,
-`config.yaml`, `model.pt`.
+`config.yaml`, `model.pt`, and `preprocessor.joblib` (fitted scalers + vocabs so inference
+replays the exact training transforms).
 
 ---
 

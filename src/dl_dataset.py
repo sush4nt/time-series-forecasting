@@ -60,6 +60,27 @@ def _add_calendar_cyclic(df: pd.DataFrame) -> pd.DataFrame:
 
 
 @dataclass
+class Preprocessor:
+    """Fitted train-only transforms needed to preprocess new data identically.
+
+    Persisted next to the model so inference replays the exact training transforms
+    (scalers, target log-stats, categorical vocabularies) instead of re-fitting.
+    """
+
+    known_scaler: StandardScaler
+    stat_scaler: StandardScaler
+    vocabs: dict
+    target_mean: float
+    target_std: float
+    static_cat_cols: list[str]
+    static_num_cols: list[str]
+    known_num_cols: list[str]
+    cat_cardinalities: list[int]
+    encoder_len: int
+    horizon: int
+
+
+@dataclass
 class DLData:
     """Everything the model + evaluation need, split-aware."""
 
@@ -75,6 +96,7 @@ class DLData:
     target_std: float
     encoder_len: int
     horizon: int
+    preprocessor: Preprocessor | None = None
 
 
 class WindowDataset(Dataset):
@@ -230,4 +252,17 @@ def build_dl_data(df: pd.DataFrame, dl: DLConfig, split: SplitConfig, seed: int)
         target_std=tstd,
         encoder_len=L,
         horizon=H,
+        preprocessor=Preprocessor(
+            known_scaler=known_scaler,
+            stat_scaler=stat_scaler,
+            vocabs=vocabs,
+            target_mean=tmean,
+            target_std=tstd,
+            static_cat_cols=STATIC_CAT_COLS,
+            static_num_cols=STATIC_NUM_COLS,
+            known_num_cols=KNOWN_NUM_COLS,
+            cat_cardinalities=cat_cardinalities,
+            encoder_len=L,
+            horizon=H,
+        ),
     )
