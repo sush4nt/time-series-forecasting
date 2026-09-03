@@ -42,11 +42,15 @@ def main() -> None:
     result = run(config_path=args.config, model_name=args.model, run_name=args.run_name)
 
     test = result.metrics["test"]["overall"]
+    test_ex = result.metrics["test"]["overall_ex_stockout"]
     print("\n" + "=" * 60)
     print(f"Done: {result.model_name}")
     print(f"Artifacts -> {result.run_dir}")
     print(
-        f"TEST  WAPE={test['wape']:.4f}  MAE={test['mae']:.3f}  RMSE={test['rmse']:.3f}"
+        f"TEST (all)      WAPE={test['wape']:.4f}  MAE={test['mae']:.3f}  RMSE={test['rmse']:.3f}"
+    )
+    print(
+        f"TEST (in-stock) WAPE={test_ex['wape']:.4f}  MAE={test_ex['mae']:.3f}  RMSE={test_ex['rmse']:.3f}"
     )
     print("=" * 60)
 

@@ -9,6 +9,17 @@ Chronological split (never shuffle time series):
 Training drops censored (stockout) rows because their ``units_sold`` is
 supply-capped and would teach the model a downward-biased demand. Val/test keep
 all rows so evaluation reflects real operating conditions.
+
+Walk-forward evaluation assumption
+----------------------------------
+Demand lags/rollings are shifted by the 14-day horizon, so predicting a test day
+only needs data up to 14 days earlier. For test days beyond the first two weeks,
+those lags read *actual* ``units_sold`` from earlier test days. Reported val/test
+metrics therefore represent a **rolling / walk-forward** deployment: the model is
+re-scored as fresh sales arrive (actuals become known with a <=14-day lag and
+features are recomputed each step). They are **not** the numbers for a single
+fixed-origin "forecast the next 14 days once and walk away" run — that would use
+predicted (not actual) lags past day 14 and is expected to be somewhat worse.
 """
 
 from __future__ import annotations

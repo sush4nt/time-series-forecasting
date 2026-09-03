@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from sklearn.model_selection import KFold
 from sklearn.preprocessing import LabelEncoder
 
 from .config import FeatureConfig, SplitConfig
@@ -212,30 +213,53 @@ def add_weather_features(df: pd.DataFrame, train_mask: pd.Series, heavy_rain_q: 
 # --------------------------------------------------------------------------- #
 # Encodings
 # --------------------------------------------------------------------------- #
-def add_encodings(df: pd.DataFrame, train_mask_clean: pd.Series, smoothing: int) -> list[str]:
-    """Label encodings (leakage-free) + smoothed target encodings (train-only means)."""
+def add_encodings(
+    df: pd.DataFrame, train_mask_clean: pd.Series, smoothing: int, seed: int, n_splits: int = 5
+) -> list[str]:
+    """Label encodings (leakage-free) + smoothed **out-of-fold** target encodings.
+
+    Target/series encodings are the biggest leakage risk: a naive train-mean bakes
+    each row's own target into its own feature. To avoid that we K-fold the TRAIN
+    rows and encode each fold from the *other* folds only, so no training row ever
+    sees its own target. Val/test rows get the plain full-train encoding (they were
+    never part of the fit, so that is already leakage-free).
+    """
     for col in LABEL_COLS:
         df[f"{col}_enc"] = LabelEncoder().fit_transform(df[col])
 
     global_mean = df.loc[train_mask_clean, TARGET_COL].mean()
+    train_idx = df.index[train_mask_clean].to_numpy()
 
-    def smoothed_target_encode(col: str, new_col: str) -> None:
-        stats = df.loc[train_mask_clean].groupby(col)[TARGET_COL].agg(["mean", "count"])
-        smooth = (stats["mean"] * stats["count"] + global_mean * smoothing) / (
+    def _smooth(stats: pd.DataFrame) -> pd.Series:
+        return (stats["mean"] * stats["count"] + global_mean * smoothing) / (
             stats["count"] + smoothing
         )
-        df[new_col] = df[col].map(smooth).fillna(global_mean)
+
+    def _map(keys: pd.DataFrame, enc: pd.Series, cols: list[str]) -> pd.Series:
+        if len(cols) == 1:
+            return keys[cols[0]].map(enc)
+        mi = pd.MultiIndex.from_frame(keys[cols])
+        return pd.Series(enc.reindex(mi).to_numpy(), index=keys.index)
+
+    def encode(cols: list[str], new_col: str) -> None:
+        # Full-train encoding: assigned to every row (val/test keep it as-is).
+        full = _smooth(df.loc[train_mask_clean].groupby(cols)[TARGET_COL].agg(["mean", "count"]))
+        df[new_col] = _map(df, full, cols).fillna(global_mean).to_numpy()
+
+        # Out-of-fold encoding overwrites TRAIN rows so none sees its own target.
+        kf = KFold(n_splits=n_splits, shuffle=True, random_state=seed)
+        oof = np.empty(len(train_idx), dtype=float)
+        for fit_pos, val_pos in kf.split(train_idx):
+            fit_rows, val_rows = train_idx[fit_pos], train_idx[val_pos]
+            enc = _smooth(df.loc[fit_rows].groupby(cols)[TARGET_COL].agg(["mean", "count"]))
+            oof[val_pos] = _map(df.loc[val_rows], enc, cols).fillna(global_mean).to_numpy()
+        df.loc[train_idx, new_col] = oof
 
     for col, new_col in TARGET_ENC_COLS.items():
-        smoothed_target_encode(col, new_col)
+        encode([col], new_col)
 
-    # Series-level mean demand (store x SKU), smoothed, train-only.
-    gstats = df.loc[train_mask_clean].groupby(SERIES_KEY)[TARGET_COL].agg(["mean", "count"])
-    series_smooth = (gstats["mean"] * gstats["count"] + global_mean * smoothing) / (
-        gstats["count"] + smoothing
-    )
-    df_joined = df.join(series_smooth.rename("series_mean_demand"), on=SERIES_KEY)
-    df["series_mean_demand"] = df_joined["series_mean_demand"].fillna(global_mean).values
+    # Series-level mean demand (store x SKU), same OOF treatment.
+    encode(SERIES_KEY, "series_mean_demand")
 
     static_numeric = ["latitude", "longitude"]
 
@@ -251,12 +275,13 @@ def add_encodings(df: pd.DataFrame, train_mask_clean: pd.Series, smoothing: int)
 # Orchestrator
 # --------------------------------------------------------------------------- #
 def build_features(
-    df: pd.DataFrame, feat_cfg: FeatureConfig, split_cfg: SplitConfig
+    df: pd.DataFrame, feat_cfg: FeatureConfig, split_cfg: SplitConfig, seed: int = 42
 ) -> tuple[pd.DataFrame, list[str]]:
     """Run all feature families and return ``(df_with_features, feature_cols)``.
 
     Train-only statistics use the same chronological TRAIN window as the final
-    split, and target encodings additionally exclude stockout (censored) rows.
+    split, and target encodings additionally exclude stockout (censored) rows and
+    are computed out-of-fold on the train rows (``seed`` controls the folds).
     """
     train_end = pd.Timestamp(split_cfg.train_end)
     train_mask = df["date"] <= train_end
@@ -268,7 +293,7 @@ def build_features(
     lag = add_lag_rolling_features(df, feat_cfg.horizon)
     promo = add_price_promo_features(df, train_mask)
     weather = add_weather_features(df, train_mask, feat_cfg.heavy_rain_quantile)
-    enc = add_encodings(df, train_mask_clean, feat_cfg.target_smoothing)
+    enc = add_encodings(df, train_mask_clean, feat_cfg.target_smoothing, seed)
 
     feature_cols = cal + lag + promo + weather + enc
     return df, feature_cols
