@@ -51,16 +51,21 @@ forecast leakage-free by construction (see the walk-forward doc).
 
 ## 3. Results — model comparison (TEST, in-stock view)
 
-| Model | WAPE | MAE | RMSE | bias | Train time | Notes |
-|---|---:|---:|---:|---:|---:|---|
-| **CatBoost** | **0.2399** | 14.72 | 22.02 | +0.03 | 62 s | best accuracy, well-centred |
-| **LightGBM** | 0.2407 | 14.77 | 22.13 | −0.06 | **13 s** | ~tied, **fastest** |
-| **XGBoost** | 0.2410 | 14.79 | 22.21 | +0.00 | 35 s | ~tied |
-| **GRU enc-dec** | 0.2435 | 14.85 | 22.19 | −2.26 | **611 s** (CPU) | matches trees, ~47× slower, slight under-bias |
+| Model | WAPE | MAE | RMSE | bias | Train time | vs. naive | Notes |
+|---|---:|---:|---:|---:|---:|---:|---|
+| **CatBoost** | **0.2399** | 14.72 | 22.02 | +0.03 | 62 s | −40.6% | best accuracy, well-centred |
+| **LightGBM** | 0.2407 | 14.77 | 22.13 | −0.06 | **13 s** | −40.4% | ~tied, **fastest** |
+| **XGBoost** | 0.2410 | 14.79 | 22.21 | +0.00 | 35 s | −40.3% | ~tied |
+| **GRU enc-dec** | 0.2435 | 14.85 | 22.19 | −2.26 | **611 s** (CPU) | −39.7% | matches trees, ~47× slower, slight under-bias |
+| _Seasonal-naive (floor)_ | _0.4041_ | _24.79_ | _38.55_ | _−2.39_ | _—_ | _—_ | _same-weekday, lag 14 (horizon-safe)_ |
 
-*All three trees are within 0.001 WAPE of each other; the GRU is within ~0.004.* On
-accuracy this is effectively a **four-way tie**, with the GRU costing ~50× more to train
-and far more to serve.
+*Every learned model cuts WAPE **~40%** below the seasonal-naive floor* — the modelling
+clearly earns its keep. Among the learned models the trees sit within 0.001 WAPE of each
+other and the GRU within ~0.004: on accuracy this is effectively a **four-way tie**, with
+the GRU costing ~50× more to train and far more to serve. (Floor = predict each day's
+demand from the same weekday two weeks earlier — the tightest same-weekday rule that
+respects the models' ≥14-day leakage constraint; a lag-7 rule would peek inside the
+window.)
 
 **Key breakdowns (LightGBM, representative):**
 
@@ -158,8 +163,8 @@ only pays off as store/SKU count and promo complexity grow; today it earns its k
 1. **Prove evaluation validity** — add a **rolling-origin 14-day backtest** (should match
    the reported ~0.24 WAPE) to formally close the walk-forward vs. fixed-origin question
    (see [`walk-forward-vs-fixed-origin.md`](walk-forward-vs-fixed-origin.md)).
-2. **Add a naive floor** — seasonal-naive (same-weekday-last-week) WAPE as a reference so
-   "0.24" has meaning ("models beat naive by X%").
+2. ~~Add a naive floor~~ ✅ **done** — seasonal-naive (same-weekday, lag 14) is in the
+   pipeline (`src/baselines.py`) and comparison; every model beats it by ~40% WAPE.
 3. **Single Q4 test window** is holiday-heavy → add a **rolling/multi-origin backtest** over
    several windows for a stability estimate.
 4. **Uncertainty** — add quantile or conformal intervals to drive safety stock / service
