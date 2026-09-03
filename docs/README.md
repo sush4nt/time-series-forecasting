@@ -67,6 +67,7 @@ uv run python train.py --model lightgbm
 uv run python train.py --model xgboost
 uv run python train.py --model catboost
 uv run python train.py --model gru                       # Part C
+uv run python -m src.baselines --lag 14                   # seasonal-naive floor (Part D reference)
 
 # useful flags
 uv run python train.py --model gru --run-name gru_v1
