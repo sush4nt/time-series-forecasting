@@ -1,12 +1,13 @@
-"""Part B — Classical ML baseline forecasting pipeline.
+"""FMCG demand forecasting — classical ML + deep learning pipelines.
 
-A small, linear pipeline for benchmarking tree-based demand-forecasting models:
+One unified runner benchmarks tree models and a GRU encoder-decoder on the same
+splits and metrics:
 
     1. load        -> src.data.load_data
-    2. features    -> src.features.build_features
-    3. split       -> src.splits.make_splits
-    4. train       -> src.models.train_model
+    2. prepare     -> backend (features+splits  OR  sequence windows)
+    3. fit         -> backend (tree training     OR  GRU training loop)
+    4. predict     -> backend (per-split meta + predictions)
     5. evaluate    -> src.evaluate.evaluate_split
 
-Run it end-to-end via ``train.py`` (thin CLI over ``src.pipeline.run``).
+Run it end-to-end via ``train.py`` (thin CLI over ``src.runner.run``).
 """

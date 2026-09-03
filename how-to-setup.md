@@ -38,6 +38,21 @@ uv add "numpy~=1.26.0" \
 
 This resolves and installs everything into a `.venv` in the project root and writes `uv.lock`.
 
+## 3b. Add PyTorch (Part C — GRU, CPU build)
+
+PyTorch is pulled from the CPU wheel index (pinned in `pyproject.toml` under
+`[tool.uv.sources]` / `[[tool.uv.index]]`), so a plain `uv sync` installs it:
+
+```bash
+uv sync
+```
+
+To add/refresh it explicitly into the active venv without touching resolution:
+
+```bash
+uv pip install "torch~=2.2.0" --index-url https://download.pytorch.org/whl/cpu
+```
+
 ## 4. Run commands through the environment
 
 ```bash
